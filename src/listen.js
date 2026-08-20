@@ -1,12 +1,14 @@
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
-import { spawn } from "node:child_process";
 import pc from "picocolors";
 import { uIOhook, UiohookKey } from "uiohook-napi";
 import { transcribe } from "./transcribe.js";
 import { copyToClipboard } from "./clipboard.js";
 import { notify } from "./notify.js";
+import { spawnRecording, stopRecording as stopRecordingProcess } from "./record.js";
+import { getRecordingDevice } from "./config.js";
+import { startTray, setTrayState } from "./tray.js";
 
 const HOTKEY = UiohookKey.CtrlRight;
 const HOTKEY_LABEL = "Right Ctrl";
@@ -18,24 +20,40 @@ function readyLine() {
 
 export function startListening() {
   let recording = null;
+  let starting = false;
 
-  function startRecording() {
-    if (recording) {
+  startTray().catch((err) => {
+    console.error(pc.dim(`(tray icon unavailable: ${err.message})`));
+  });
+
+  async function startRecording() {
+    if (recording || starting) {
       return;
     }
+    starting = true;
 
-    const filePath = path.join(os.tmpdir(), `sayclip-voice-${Date.now()}.wav`);
-    const child = spawn("arecord", ["-f", "S16_LE", "-r", "16000", "-c", "1", filePath], {
-      stdio: "ignore",
-    });
+    try {
+      const device = await getRecordingDevice();
+      if (process.platform === "win32" && !device) {
+        console.error(pc.red("No microphone device configured."));
+        return;
+      }
 
-    child.on("error", (err) => {
-      console.error(pc.red(`Failed to start arecord: ${err.message}`));
-      recording = null;
-    });
+      const filePath = path.join(os.tmpdir(), `sayclip-voice-${Date.now()}.wav`);
+      const child = spawnRecording(filePath, { device });
 
-    recording = { process: child, filePath, startedAt: Date.now() };
-    console.log(pc.cyan("🎤 RECORDING"));
+      child.on("error", (err) => {
+        console.error(pc.red(`Failed to start recording: ${err.message}`));
+        recording = null;
+        setTrayState(false);
+      });
+
+      recording = { process: child, filePath, startedAt: Date.now() };
+      console.log(pc.cyan("🎤 RECORDING"));
+      setTrayState(true);
+    } finally {
+      starting = false;
+    }
   }
 
   async function stopRecording() {
@@ -51,11 +69,12 @@ export function startListening() {
 
     await new Promise((resolve) => {
       child.once("close", resolve);
-      child.kill("SIGINT");
+      stopRecordingProcess(child);
     });
 
     if (tooShort) {
       fs.promises.unlink(filePath).catch(() => {});
+      setTrayState(false);
       console.log(readyLine());
       return;
     }
@@ -80,6 +99,7 @@ export function startListening() {
       fs.promises.unlink(filePath).catch(() => {});
     }
 
+    setTrayState(false);
     console.log(readyLine());
   }
 

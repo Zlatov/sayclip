@@ -69,6 +69,44 @@ export async function getWhisperConfig() {
   return { binary: expandHome(binary), model: expandHome(model), language: "auto", prompt: "" };
 }
 
+function askRecordingDevice() {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    console.log("Windows microphone device name not found.");
+    console.log("Find it with: ffmpeg -f dshow -list_devices true -i dummy");
+    console.log('Look under "DirectShow audio devices" and copy the name in quotes.');
+
+    rl.question("Microphone device name: ", (device) => {
+      rl.close();
+      resolve(device.trim());
+    });
+  });
+}
+
+export async function getRecordingDevice() {
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  const config = readConfigFile();
+  if (config?.recordingDevice) {
+    return config.recordingDevice;
+  }
+
+  const device = await askRecordingDevice();
+  if (!device) {
+    return null;
+  }
+
+  writeConfigFile({ recordingDevice: device });
+  console.log(`\nSaved to ${CONFIG_PATH}\n`);
+  return device;
+}
+
 function listModelsInSameDir(modelPath) {
   try {
     const dir = path.dirname(modelPath);
@@ -126,6 +164,15 @@ export async function reconfig() {
   const promptAnswer = await ask(`Initial prompt for Whisper, biases vocabulary/style [${currentPrompt}]: `);
   if (promptAnswer) {
     config.prompt = promptAnswer;
+  }
+
+  if (process.platform === "win32") {
+    const currentDevice = config.recordingDevice || "(not set)";
+    console.log('\nFind it with: ffmpeg -f dshow -list_devices true -i dummy');
+    const deviceAnswer = await ask(`Microphone device name [${currentDevice}]: `);
+    if (deviceAnswer) {
+      config.recordingDevice = deviceAnswer;
+    }
   }
 
   rl.close();
