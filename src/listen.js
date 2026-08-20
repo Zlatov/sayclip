@@ -10,6 +10,7 @@ import { notify } from "./notify.js";
 
 const HOTKEY = UiohookKey.CtrlRight;
 const HOTKEY_LABEL = "Right Ctrl";
+const MIN_RECORDING_MS = 400;
 
 function readyLine() {
   return pc.dim(`● READY — hold ${HOTKEY_LABEL} to record`);
@@ -33,7 +34,7 @@ export function startListening() {
       recording = null;
     });
 
-    recording = { process: child, filePath };
+    recording = { process: child, filePath, startedAt: Date.now() };
     console.log(pc.cyan("🎤 RECORDING"));
   }
 
@@ -42,15 +43,22 @@ export function startListening() {
       return;
     }
 
-    const { process: child, filePath } = recording;
+    const { process: child, filePath, startedAt } = recording;
     recording = null;
 
-    console.log(pc.yellow("⏳ TRANSCRIBING"));
+    const tooShort = Date.now() - startedAt < MIN_RECORDING_MS;
+    console.log(tooShort ? pc.dim("(too short, skipped)") : pc.yellow("⏳ TRANSCRIBING"));
 
     await new Promise((resolve) => {
       child.once("close", resolve);
       child.kill("SIGINT");
     });
+
+    if (tooShort) {
+      fs.promises.unlink(filePath).catch(() => {});
+      console.log(readyLine());
+      return;
+    }
 
     try {
       const text = await transcribe(filePath);
