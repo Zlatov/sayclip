@@ -3,6 +3,7 @@
 import pc from "picocolors";
 import { version, description } from "../src/pkg.js";
 import { transcribe } from "../src/transcribe.js";
+import { startListening } from "../src/listen.js";
 
 const cliArgs = process.argv.slice(2);
 
@@ -18,6 +19,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
       "",
       "Usage:",
       "  sayclip                    show this header",
+      "  sayclip listen             hold Right Ctrl to record, release to transcribe",
       "  sayclip transcribe <file>  transcribe a .wav file and print the text",
       "  sayclip --version          show version",
       "  sayclip --help             show this help",
@@ -26,7 +28,19 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   process.exit(0);
 }
 
-if (cliArgs[0] === "transcribe") {
+function printHeader() {
+  const line = pc.dim("─".repeat(40));
+  console.log(line);
+  console.log();
+  console.log(`sayclip v${version}`);
+  console.log();
+  console.log(line);
+}
+
+if (cliArgs[0] === "listen") {
+  printHeader();
+  startListening();
+} else if (cliArgs[0] === "transcribe") {
   const wavPath = cliArgs[1];
   if (!wavPath) {
     console.error("Usage: sayclip transcribe <file.wav>");
@@ -42,15 +56,6 @@ if (cliArgs[0] === "transcribe") {
   }
 
   process.exit(0);
+} else {
+  printHeader();
 }
-
-function printHeader() {
-  const line = pc.dim("─".repeat(40));
-  console.log(line);
-  console.log();
-  console.log(`sayclip v${version}`);
-  console.log();
-  console.log(line);
-}
-
-printHeader();
