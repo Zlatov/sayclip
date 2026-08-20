@@ -2,6 +2,7 @@
 
 import pc from "picocolors";
 import { version, description } from "../src/pkg.js";
+import { transcribe } from "../src/transcribe.js";
 
 const cliArgs = process.argv.slice(2);
 
@@ -16,11 +17,30 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
       `sayclip ${version} — ${description}`,
       "",
       "Usage:",
-      "  sayclip              show this header",
-      "  sayclip --version    show version",
-      "  sayclip --help       show this help",
+      "  sayclip                    show this header",
+      "  sayclip transcribe <file>  transcribe a .wav file and print the text",
+      "  sayclip --version          show version",
+      "  sayclip --help             show this help",
     ].join("\n"),
   );
+  process.exit(0);
+}
+
+if (cliArgs[0] === "transcribe") {
+  const wavPath = cliArgs[1];
+  if (!wavPath) {
+    console.error("Usage: sayclip transcribe <file.wav>");
+    process.exit(1);
+  }
+
+  try {
+    const text = await transcribe(wavPath);
+    console.log(text);
+  } catch (err) {
+    console.error(`Transcription failed: ${err.message}`);
+    process.exit(1);
+  }
+
   process.exit(0);
 }
 
