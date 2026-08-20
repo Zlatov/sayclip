@@ -4,6 +4,8 @@ import pc from "picocolors";
 import { version, description } from "../src/pkg.js";
 import { transcribe } from "../src/transcribe.js";
 import { startListening } from "../src/listen.js";
+import { startDaemon, stopDaemon, getRunningPid, registerCurrentProcess } from "../src/daemon.js";
+import { reconfig } from "../src/config.js";
 
 const cliArgs = process.argv.slice(2);
 
@@ -18,9 +20,11 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
       `sayclip ${version} — ${description}`,
       "",
       "Usage:",
-      "  sayclip                    show this header",
-      "  sayclip listen             hold Right Ctrl to record, release to transcribe",
+      "  sayclip                    run in foreground, hold Right Ctrl to record",
+      "  sayclip start              run in the background",
+      "  sayclip stop               stop the background instance",
       "  sayclip transcribe <file>  transcribe a .wav file and print the text",
+      "  sayclip reconfig           change whisper binary/model/language/prompt",
       "  sayclip --version          show version",
       "  sayclip --help             show this help",
     ].join("\n"),
@@ -37,9 +41,13 @@ function printHeader() {
   console.log(line);
 }
 
-if (cliArgs[0] === "listen") {
-  printHeader();
-  startListening();
+if (cliArgs[0] === "start") {
+  startDaemon();
+} else if (cliArgs[0] === "stop") {
+  stopDaemon();
+} else if (cliArgs[0] === "reconfig" || cliArgs.includes("--reconfig")) {
+  await reconfig();
+  process.exit(0);
 } else if (cliArgs[0] === "transcribe") {
   const wavPath = cliArgs[1];
   if (!wavPath) {
@@ -57,5 +65,13 @@ if (cliArgs[0] === "listen") {
 
   process.exit(0);
 } else {
+  const existing = getRunningPid();
+  if (existing) {
+    console.log(`Already running in the background (pid ${existing}). Run "sayclip stop" first.`);
+    process.exit(1);
+  }
+
+  registerCurrentProcess();
   printHeader();
+  startListening();
 }

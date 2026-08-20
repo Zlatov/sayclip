@@ -11,9 +11,12 @@ export async function transcribe(wavPath) {
     throw new Error("Whisper is not configured (missing binary/model path).");
   }
 
-  await execFileAsync(whisper.binary, ["-m", whisper.model, "-f", wavPath, "-l", "auto", "-otxt", "-nt"], {
-    timeout: 60_000,
-  });
+  const args = ["-m", whisper.model, "-f", wavPath, "-l", whisper.language, "-otxt", "-nt"];
+  if (whisper.prompt) {
+    args.push("--prompt", whisper.prompt);
+  }
+
+  await execFileAsync(whisper.binary, args, { timeout: 60_000 });
 
   const txtPath = `${wavPath}.txt`;
   const text = await readFile(txtPath, "utf8");

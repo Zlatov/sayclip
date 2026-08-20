@@ -1,0 +1,32 @@
+# systemd --user unit for sayclip autostart.
+#
+# ExecStart points at /usr/local/bin/sayclip rather than the bare "sayclip"
+# command. systemd --user units don't source your shell's rc files, so a
+# nvm-managed global install (which only lands on PATH via .bashrc/.zshrc)
+# is invisible here. Fix once: symlink the current nvm node + the sayclip
+# entry script into /usr/local/bin (same fix used for debash's GNOME
+# hotkeys):
+#
+#   sudo ln -sf "$(nvm which current)" /usr/local/bin/node
+#   sudo ln -sf "$(npm root -g)/sayclip/bin/sayclip.js" /usr/local/bin/sayclip
+#
+# Install this unit:
+#   mkdir -p ~/.config/systemd/user
+#   cp contrib/systemd/sayclip.service ~/.config/systemd/user/
+#   systemctl --user enable --now sayclip.service
+#
+# Logs (in addition to the unit's own stdout/stderr, sayclip also logs to
+# ~/.sayclip/daemon.log when started via the bare command like this):
+#   journalctl --user -u sayclip -f
+
+[Unit]
+Description=sayclip push-to-talk voice-to-clipboard daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sayclip
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
