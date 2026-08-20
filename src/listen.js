@@ -5,6 +5,8 @@ import { spawn } from "node:child_process";
 import pc from "picocolors";
 import { uIOhook, UiohookKey } from "uiohook-napi";
 import { transcribe } from "./transcribe.js";
+import { copyToClipboard } from "./clipboard.js";
+import { notify } from "./notify.js";
 
 const HOTKEY = UiohookKey.CtrlRight;
 const HOTKEY_LABEL = "Right Ctrl";
@@ -53,8 +55,19 @@ export function startListening() {
     try {
       const text = await transcribe(filePath);
       console.log(text || pc.dim("(empty)"));
+
+      if (text) {
+        try {
+          await copyToClipboard(text);
+          notify(text);
+        } catch (clipErr) {
+          console.error(pc.red(`Clipboard copy failed: ${clipErr.message}`));
+          notify(text, { urgency: "low" });
+        }
+      }
     } catch (err) {
       console.error(pc.red(`Transcription failed: ${err.message}`));
+      notify(`Transcription failed: ${err.message}`, { urgency: "critical" });
     } finally {
       fs.promises.unlink(filePath).catch(() => {});
     }
