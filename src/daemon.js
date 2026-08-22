@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { hasWhisperConfig } from "./config.js";
 
 const SAYCLIP_DIR = path.join(os.homedir(), ".sayclip");
 const PID_PATH = path.join(SAYCLIP_DIR, "daemon.pid");
@@ -55,6 +56,12 @@ export function startDaemon() {
   const existing = getRunningPid();
   if (existing) {
     console.log(`Already running (pid ${existing}). Log: ${LOG_PATH}`);
+    return;
+  }
+
+  if (!hasWhisperConfig()) {
+    console.error('Whisper is not configured yet. Run "sayclip reconfig" first, then try "sayclip start" again.');
+    process.exitCode = 1;
     return;
   }
 

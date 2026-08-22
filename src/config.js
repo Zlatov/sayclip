@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { ensureWhisperRuntime, ensureWhisperModel, runtimeAvailableForThisMachine, MODELS } from "./runtime.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".sayclip");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
@@ -20,6 +21,11 @@ function writeConfigFile(patch) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
 }
 
+export function hasWhisperConfig() {
+  const config = readConfigFile();
+  return Boolean(config?.whisperBinary && config?.whisperModel);
+}
+
 function expandHome(rawPath) {
   if (rawPath === "~") {
     return os.homedir();
@@ -30,22 +36,88 @@ function expandHome(rawPath) {
   return rawPath;
 }
 
-function askWhisperPaths() {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+async function chooseWhisperBinary(ask, currentBinary) {
+  if (!runtimeAvailableForThisMachine()) {
+    const answer = await ask(`Path to whisper-cli binary${currentBinary ? ` [${currentBinary}]` : ""}: `);
+    return answer || currentBinary;
+  }
 
-    console.log("Whisper.cpp paths not found.");
+  console.log("\nWhisper binary:");
+  console.log("  1. Download prebuilt runtime automatically (recommended)");
+  console.log("  2. Enter my own whisper-cli path");
+  const hint = currentBinary ? `Enter to keep current: ${currentBinary}` : "Enter for option 1";
+  const choice = await ask(`Choice [1/2] (${hint}): `);
 
-    rl.question("Path to whisper-cli binary: ", (binary) => {
-      rl.question("Path to model (.bin): ", (model) => {
-        rl.close();
-        resolve({ binary: binary.trim(), model: model.trim() });
-      });
-    });
-  });
+  if (!choice) {
+    return currentBinary || ensureWhisperRuntime();
+  }
+  if (choice === "2") {
+    const answer = await ask("Path to whisper-cli binary: ");
+    return answer || currentBinary;
+  }
+  return ensureWhisperRuntime();
+}
+
+function listModelsInSameDir(modelPath) {
+  try {
+    const dir = path.dirname(modelPath);
+    return fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith(".bin"))
+      .map((f) => path.join(dir, f))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+async function chooseWhisperModel(ask, currentModel) {
+  const localModels = currentModel ? listModelsInSameDir(currentModel) : [];
+  const downloadable = runtimeAvailableForThisMachine()
+    ? MODELS.filter((m) => !localModels.some((p) => path.basename(p) === `ggml-${m.name}.bin`))
+    : [];
+
+  const entries = [
+    ...localModels.map((p) => ({
+      kind: "path",
+      value: p,
+      label: `${path.basename(p)}${p === currentModel ? " (current)" : ""}`,
+    })),
+    ...downloadable.map((m) => ({ kind: "download", value: m.name, label: `download: ${m.label}` })),
+  ];
+
+  if (entries.length === 0) {
+    const answer = await ask(`Path to model (.bin)${currentModel ? ` [${currentModel}]` : ""}: `);
+    return answer || currentModel;
+  }
+
+  console.log("\nWhisper model:");
+  entries.forEach((e, i) => console.log(`  ${i + 1}. ${e.label}`));
+  const pathChoiceNum = entries.length + 1;
+  console.log(`  ${pathChoiceNum}. Enter a custom path`);
+
+  const hint = currentModel ? "Enter to keep current" : "Enter for small";
+  const choice = await ask(`Pick [1-${pathChoiceNum}] (${hint}): `);
+
+  if (!choice) {
+    if (currentModel) {
+      return currentModel;
+    }
+    const small = entries.find((e) => e.kind === "download" && e.value === "small");
+    return small ? ensureWhisperModel("small") : currentModel;
+  }
+
+  const idx = parseInt(choice, 10);
+  if (idx === pathChoiceNum) {
+    const answer = await ask("Path to model (.bin): ");
+    return answer || currentModel;
+  }
+
+  const picked = entries[idx - 1];
+  if (!picked) {
+    return currentModel;
+  }
+  return picked.kind === "download" ? ensureWhisperModel(picked.value) : picked.value;
 }
 
 export async function getWhisperConfig() {
@@ -59,7 +131,16 @@ export async function getWhisperConfig() {
     };
   }
 
-  const { binary, model } = await askWhisperPaths();
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
+
+  console.log("Whisper is not configured yet.");
+
+  const binary = await chooseWhisperBinary(ask, config?.whisperBinary ? expandHome(config.whisperBinary) : null);
+  const model = await chooseWhisperModel(ask, config?.whisperModel ? expandHome(config.whisperModel) : null);
+
+  rl.close();
+
   if (!binary || !model) {
     return null;
   }
@@ -107,19 +188,6 @@ export async function getRecordingDevice() {
   return device;
 }
 
-function listModelsInSameDir(modelPath) {
-  try {
-    const dir = path.dirname(modelPath);
-    return fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(".bin"))
-      .map((f) => path.join(dir, f))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
 export async function reconfig() {
   const config = readConfigFile() ?? {};
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -127,35 +195,20 @@ export async function reconfig() {
 
   console.log("Current sayclip settings. Press Enter to keep the current value.\n");
 
-  const currentBinary = config.whisperBinary ? expandHome(config.whisperBinary) : "(not set)";
-  const binaryAnswer = await ask(`Path to whisper-cli binary [${currentBinary}]: `);
-  if (binaryAnswer) {
-    config.whisperBinary = binaryAnswer;
+  const currentBinary = config.whisperBinary ? expandHome(config.whisperBinary) : null;
+  const binary = await chooseWhisperBinary(ask, currentBinary);
+  if (binary) {
+    config.whisperBinary = binary;
   }
 
   const currentModel = config.whisperModel ? expandHome(config.whisperModel) : null;
-  const models = currentModel ? listModelsInSameDir(currentModel) : [];
-
-  if (models.length > 0) {
-    console.log(`\nModels found in ${path.dirname(currentModel)}:`);
-    models.forEach((m, i) => {
-      const marker = m === currentModel ? " (current)" : "";
-      console.log(`  ${i + 1}. ${path.basename(m)}${marker}`);
-    });
-    const pick = await ask(`Pick a model [1-${models.length}], paste a path, or Enter to keep current: `);
-    if (pick) {
-      const idx = parseInt(pick, 10);
-      config.whisperModel = !isNaN(idx) && models[idx - 1] ? models[idx - 1] : pick;
-    }
-  } else {
-    const modelAnswer = await ask(`Path to model (.bin) [${currentModel ?? "(not set)"}]: `);
-    if (modelAnswer) {
-      config.whisperModel = modelAnswer;
-    }
+  const model = await chooseWhisperModel(ask, currentModel);
+  if (model) {
+    config.whisperModel = model;
   }
 
   const currentLanguage = config.language || "auto";
-  const languageAnswer = await ask(`Recognition language, e.g. "en", "ru", "auto" [${currentLanguage}]: `);
+  const languageAnswer = await ask(`\nRecognition language, e.g. "en", "ru", "auto" [${currentLanguage}]: `);
   if (languageAnswer) {
     config.language = languageAnswer;
   }
@@ -168,7 +221,7 @@ export async function reconfig() {
 
   if (process.platform === "win32") {
     const currentDevice = config.recordingDevice || "(not set)";
-    console.log('\nFind it with: ffmpeg -f dshow -list_devices true -i dummy');
+    console.log("\nFind it with: ffmpeg -f dshow -list_devices true -i dummy");
     const deviceAnswer = await ask(`Microphone device name [${currentDevice}]: `);
     if (deviceAnswer) {
       config.recordingDevice = deviceAnswer;

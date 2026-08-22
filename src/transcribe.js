@@ -1,3 +1,4 @@
+import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, unlink } from "node:fs/promises";
@@ -16,7 +17,17 @@ export async function transcribe(wavPath) {
     args.push("--prompt", whisper.prompt);
   }
 
-  await execFileAsync(whisper.binary, args, { timeout: 60_000 });
+  // Downloaded runtime binaries carry a build-machine RUNPATH that won't
+  // exist on the user's machine; LD_LIBRARY_PATH takes precedence over it.
+  const env =
+    process.platform === "win32"
+      ? process.env
+      : {
+          ...process.env,
+          LD_LIBRARY_PATH: [path.dirname(whisper.binary), process.env.LD_LIBRARY_PATH].filter(Boolean).join(":"),
+        };
+
+  await execFileAsync(whisper.binary, args, { timeout: 60_000, env });
 
   const txtPath = `${wavPath}.txt`;
   const text = await readFile(txtPath, "utf8");
