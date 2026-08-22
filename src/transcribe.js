@@ -27,7 +27,7 @@ export async function transcribe(wavPath) {
           LD_LIBRARY_PATH: [path.dirname(whisper.binary), process.env.LD_LIBRARY_PATH].filter(Boolean).join(":"),
         };
 
-  await execFileAsync(whisper.binary, args, { timeout: 60_000, env });
+  await execFileAsync(whisper.binary, args, { timeout: 60_000, env, windowsHide: true });
 
   const txtPath = `${wavPath}.txt`;
   const text = await readFile(txtPath, "utf8");

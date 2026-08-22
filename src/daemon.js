@@ -89,3 +89,15 @@ export function stopDaemon() {
   fs.rmSync(PID_PATH, { force: true });
   console.log(`Stopped (pid ${pid}).`);
 }
+
+export async function restartDaemon() {
+  const pid = getRunningPid();
+  if (pid) {
+    process.kill(pid, "SIGTERM");
+    fs.rmSync(PID_PATH, { force: true });
+    for (let i = 0; i < 30 && isAlive(pid); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  startDaemon();
+}

@@ -1,8 +1,9 @@
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 import systrayPkg from "systray2";
-import { solidColorPngBase64, solidColorIcoBase64 } from "./icon.js";
+import { pngFileToBase64, pngFileToIcoBase64 } from "./icon.js";
 
 // systray2's ESM/CJS interop double-wraps the default export on some
 // versions (m.default.default instead of m.default) — unwrap defensively.
@@ -31,11 +32,11 @@ function ensureTrayBinaryExecutable() {
   }
 }
 
-const YELLOW = [242, 201, 76];
-const GREEN = [87, 187, 138];
+const READY_PNG = fileURLToPath(new URL("./assets/tray-ready.png", import.meta.url));
+const RECORDING_PNG = fileURLToPath(new URL("./assets/tray-recording.png", import.meta.url));
 
-function iconFor(color) {
-  return process.platform === "win32" ? solidColorIcoBase64(16, color) : solidColorPngBase64(16, color);
+function iconFor(pngPath) {
+  return process.platform === "win32" ? pngFileToIcoBase64(pngPath) : pngFileToBase64(pngPath);
 }
 
 let systray = null;
@@ -46,14 +47,16 @@ const quitItem = {
   checked: false,
   enabled: true,
   click: () => {
+    // kill() itself calls process.exit(0) once the tray subprocess has
+    // confirmed it withdrew the icon — exiting eagerly here would race it
+    // and leave a stale icon behind (only clears on hover).
     systray?.kill();
-    process.exit(0);
   },
 };
 
-function menuFor(color, tooltip) {
+function menuFor(pngPath, tooltip) {
   return {
-    icon: iconFor(color),
+    icon: iconFor(pngPath),
     title: "sayclip",
     tooltip,
     items: [quitItem],
@@ -64,7 +67,7 @@ export async function startTray() {
   ensureTrayBinaryExecutable();
 
   systray = new SysTray({
-    menu: menuFor(GREEN, "sayclip — ready"),
+    menu: menuFor(READY_PNG, "sayclip — ready"),
     debug: false,
     copyDir: false,
   });
@@ -76,6 +79,20 @@ export async function startTray() {
   await systray.ready();
 }
 
+// Called on shutdown so the tray subprocess withdraws its icon cleanly
+// before the process exits — otherwise Windows/Linux leave a stale icon
+// that only disappears once the mouse hovers over it. Guarded with a
+// timeout in case the subprocess is already gone and never fires 'exit'.
+export function stopTray() {
+  if (!systray) {
+    return Promise.resolve();
+  }
+  return Promise.race([
+    systray.kill().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
+
 export function setTrayState(busy) {
   if (!systray) {
     return;
@@ -83,6 +100,8 @@ export function setTrayState(busy) {
 
   systray.sendAction({
     type: "update-menu",
-    menu: busy ? menuFor(YELLOW, "sayclip — recording/transcribing") : menuFor(GREEN, "sayclip — ready"),
+    menu: busy
+      ? menuFor(RECORDING_PNG, "sayclip — recording/transcribing")
+      : menuFor(READY_PNG, "sayclip — ready"),
   });
 }

@@ -4,7 +4,7 @@ import pc from "picocolors";
 import { version, description } from "../src/pkg.js";
 import { transcribe } from "../src/transcribe.js";
 import { startListening } from "../src/listen.js";
-import { startDaemon, stopDaemon, getRunningPid, registerCurrentProcess } from "../src/daemon.js";
+import { startDaemon, stopDaemon, restartDaemon, getRunningPid, registerCurrentProcess } from "../src/daemon.js";
 import { reconfig } from "../src/config.js";
 
 const cliArgs = process.argv.slice(2);
@@ -23,6 +23,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
       "  sayclip                    run in foreground, hold Right Ctrl to record",
       "  sayclip start              run in the background",
       "  sayclip stop               stop the background instance",
+      "  sayclip restart            restart the background instance",
       "  sayclip transcribe <file>  transcribe a .wav file and print the text",
       "  sayclip reconfig           change whisper binary/model/language/prompt",
       "  sayclip --version          show version",
@@ -45,6 +46,8 @@ if (cliArgs[0] === "start") {
   startDaemon();
 } else if (cliArgs[0] === "stop") {
   stopDaemon();
+} else if (cliArgs[0] === "restart") {
+  await restartDaemon();
 } else if (cliArgs[0] === "reconfig" || cliArgs.includes("--reconfig")) {
   await reconfig();
   process.exit(0);

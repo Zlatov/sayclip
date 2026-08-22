@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { ensureWhisperRuntime, ensureWhisperModel, runtimeAvailableForThisMachine, MODELS } from "./runtime.js";
+import { autostartSupported, isAutostartEnabled, enableAutostart, disableAutostart } from "./autostart.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".sayclip");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
@@ -24,6 +25,11 @@ function writeConfigFile(patch) {
 export function hasWhisperConfig() {
   const config = readConfigFile();
   return Boolean(config?.whisperBinary && config?.whisperModel);
+}
+
+export function getNotificationsEnabled() {
+  const config = readConfigFile();
+  return config?.notifications !== false;
 }
 
 function expandHome(rawPath) {
@@ -63,7 +69,7 @@ function listModelsInSameDir(modelPath) {
     const dir = path.dirname(modelPath);
     return fs
       .readdirSync(dir)
-      .filter((f) => f.endsWith(".bin"))
+      .filter((f) => /^ggml-.*\.bin$/.test(f))
       .map((f) => path.join(dir, f))
       .sort();
   } catch {
@@ -217,6 +223,35 @@ export async function reconfig() {
   const promptAnswer = await ask(`Initial prompt for Whisper, biases vocabulary/style [${currentPrompt}]: `);
   if (promptAnswer) {
     config.prompt = promptAnswer;
+  }
+
+  const notifyEnabled = config.notifications !== false;
+  const notifyAnswer = await ask(`\nEnable notifications after transcription? [${notifyEnabled ? "Y/n" : "y/N"}]: `);
+  if (notifyAnswer) {
+    config.notifications = /^y/i.test(notifyAnswer);
+  }
+
+  if (autostartSupported()) {
+    const currentlyEnabled = await isAutostartEnabled();
+    console.log(`\nAutostart on system login is currently: ${currentlyEnabled ? "enabled" : "disabled"}.`);
+    const autostartAnswer = await ask("Type 'add' to enable, 'remove' to disable, or Enter to leave as is: ");
+    const action = autostartAnswer.trim().toLowerCase();
+
+    if (action === "add" || action === "a") {
+      try {
+        await enableAutostart();
+        console.log("Autostart enabled.");
+      } catch (err) {
+        console.error(`Could not enable autostart: ${err.message}`);
+      }
+    } else if (action === "remove" || action === "r") {
+      try {
+        await disableAutostart();
+        console.log("Autostart disabled.");
+      } catch (err) {
+        console.error(`Could not disable autostart: ${err.message}`);
+      }
+    }
   }
 
   if (process.platform === "win32") {

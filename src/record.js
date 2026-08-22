@@ -5,7 +5,7 @@ export function spawnRecording(filePath, { device } = {}) {
     return spawn(
       "ffmpeg",
       ["-f", "dshow", "-i", `audio=${device}`, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", "-y", filePath],
-      { stdio: ["pipe", "ignore", "ignore"] },
+      { stdio: ["pipe", "ignore", "ignore"], windowsHide: true },
     );
   }
 

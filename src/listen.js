@@ -8,7 +8,7 @@ import { copyToClipboard } from "./clipboard.js";
 import { notify } from "./notify.js";
 import { spawnRecording, stopRecording as stopRecordingProcess } from "./record.js";
 import { getRecordingDevice } from "./config.js";
-import { startTray, setTrayState } from "./tray.js";
+import { startTray, setTrayState, stopTray } from "./tray.js";
 
 const HOTKEY = UiohookKey.CtrlRight;
 const HOTKEY_LABEL = "Right Ctrl";
@@ -115,8 +115,9 @@ export function startListening() {
     }
   });
 
-  function shutdown() {
+  async function shutdown() {
     uIOhook.stop();
+    await stopTray();
     process.exit(0);
   }
 
