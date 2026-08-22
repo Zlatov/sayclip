@@ -57,11 +57,18 @@ async function chooseWhisperBinary(ask, currentBinary) {
   if (!choice) {
     return currentBinary || ensureWhisperRuntime();
   }
+  if (choice === "1") {
+    return ensureWhisperRuntime();
+  }
   if (choice === "2") {
     const answer = await ask("Path to whisper-cli binary: ");
     return answer || currentBinary;
   }
-  return ensureWhisperRuntime();
+  // Anything else typed right here is almost certainly a pasted path, not
+  // a menu digit — accept it instead of silently falling through to
+  // "download" and discarding what was typed (that discarding is exactly
+  // what happened before this fix).
+  return choice;
 }
 
 function listModelsInSameDir(modelPath) {
